@@ -79,56 +79,56 @@ contract PreconfTaskManager is IPreconfTaskManager {
         uint256 lookaheadPointer,
         IPreconfTaskManager.LookaheadSetParam[] calldata lookaheadSetParams
     ) external payable {
-        // Do not allow block proposals if the preconfer has not registered the hash tree root of their
-        // consensus BLS pub key
-        if (consensusBLSPubKeyHashTreeRoots[msg.sender] == bytes32(0)) {
-            revert IPreconfTaskManager.ConsensusBLSPubKeyHashTreeRootNotRegistered();
-        }
+        // // Do not allow block proposals if the preconfer has not registered the hash tree root of their
+        // // consensus BLS pub key
+        // if (consensusBLSPubKeyHashTreeRoots[msg.sender] == bytes32(0)) {
+        //     revert IPreconfTaskManager.ConsensusBLSPubKeyHashTreeRootNotRegistered();
+        // }
 
-        uint256 currentEpochTimestamp = _getEpochTimestamp(block.timestamp);
-        address randomPreconfer = randomPreconfers[currentEpochTimestamp];
+        // uint256 currentEpochTimestamp = _getEpochTimestamp(block.timestamp);
+        // address randomPreconfer = randomPreconfers[currentEpochTimestamp];
 
-        // Verify that the sender is a valid preconfer for the slot and has the right to propose an L2 block
-        if (randomPreconfer != address(0) && msg.sender != randomPreconfer) {
-            // Revert if the sender is not the randomly selected preconfer for the epoch
-            revert IPreconfTaskManager.SenderIsNotTheFallbackPreconfer();
-        } else if (isLookaheadRequired(currentEpochTimestamp)) {
-            // The *current* epoch may require a lookahead in the following situations:
-            // - It is the first epoch after this contract started offering services
-            // - The epoch has no L1 validators who are opted-in preconfers in the AVS
-            // - The previous lookahead for the epoch was invalidated/
-            //
-            // In all the above cases, we expect a preconfer to be randomly chosen as fallaback
-            if (msg.sender != getFallbackPreconfer()) {
-                revert IPreconfTaskManager.SenderIsNotTheFallbackPreconfer();
-            } else {
-                randomPreconfers[currentEpochTimestamp] = msg.sender;
-            }
-        } else {
-            IPreconfTaskManager.LookaheadEntry memory lookaheadEntry =
-                lookahead[lookaheadPointer % LOOKAHEAD_BUFFER_SIZE];
+        // // Verify that the sender is a valid preconfer for the slot and has the right to propose an L2 block
+        // if (randomPreconfer != address(0) && msg.sender != randomPreconfer) {
+        //     // Revert if the sender is not the randomly selected preconfer for the epoch
+        //     revert IPreconfTaskManager.SenderIsNotTheFallbackPreconfer();
+        // } else if (isLookaheadRequired(currentEpochTimestamp)) {
+        //     // The *current* epoch may require a lookahead in the following situations:
+        //     // - It is the first epoch after this contract started offering services
+        //     // - The epoch has no L1 validators who are opted-in preconfers in the AVS
+        //     // - The previous lookahead for the epoch was invalidated/
+        //     //
+        //     // In all the above cases, we expect a preconfer to be randomly chosen as fallaback
+        //     if (msg.sender != getFallbackPreconfer()) {
+        //         revert IPreconfTaskManager.SenderIsNotTheFallbackPreconfer();
+        //     } else {
+        //         randomPreconfers[currentEpochTimestamp] = msg.sender;
+        //     }
+        // } else {
+        //     IPreconfTaskManager.LookaheadEntry memory lookaheadEntry =
+        //         lookahead[lookaheadPointer % LOOKAHEAD_BUFFER_SIZE];
 
-            // The current L1 block's timestamp must be within the range retrieved from the lookahead entry.
-            // The preconfer is allowed to propose a block in advanced if there are no other entries in the
-            // lookahead between the present slot and the preconfer's own slot.
-            //
-            // ------[Last slot with an entry]---[X]---[X]----[X]----[Preconfer]-------
-            // ------[     prevTimestamp     ]---[ ]---[ ]----[ ]----[timestamp]-------
-            //
-            if (block.timestamp <= lookaheadEntry.prevTimestamp || block.timestamp > lookaheadEntry.timestamp) {
-                revert IPreconfTaskManager.InvalidLookaheadPointer();
-            } else if (msg.sender != lookaheadEntry.preconfer) {
-                revert IPreconfTaskManager.SenderIsNotThePreconfer();
-            }
-        }
+        //     // The current L1 block's timestamp must be within the range retrieved from the lookahead entry.
+        //     // The preconfer is allowed to propose a block in advanced if there are no other entries in the
+        //     // lookahead between the present slot and the preconfer's own slot.
+        //     //
+        //     // ------[Last slot with an entry]---[X]---[X]----[X]----[Preconfer]-------
+        //     // ------[     prevTimestamp     ]---[ ]---[ ]----[ ]----[timestamp]-------
+        //     //
+        //     if (block.timestamp <= lookaheadEntry.prevTimestamp || block.timestamp > lookaheadEntry.timestamp) {
+        //         revert IPreconfTaskManager.InvalidLookaheadPointer();
+        //     } else if (msg.sender != lookaheadEntry.preconfer) {
+        //         revert IPreconfTaskManager.SenderIsNotThePreconfer();
+        //     }
+        // }
 
-        uint256 nextEpochTimestamp = currentEpochTimestamp + SECONDS_IN_EPOCH;
+        // uint256 nextEpochTimestamp = currentEpochTimestamp + SECONDS_IN_EPOCH;
 
-        // Update the lookahead for the next epoch.
-        // Only called during the first block proposal of the current epoch.
-        if (isLookaheadRequired(nextEpochTimestamp)) {
-            _updateLookahead(currentEpochTimestamp, lookaheadSetParams);
-        }
+        // // Update the lookahead for the next epoch.
+        // // Only called during the first block proposal of the current epoch.
+        // if (isLookaheadRequired(nextEpochTimestamp)) {
+        //     _updateLookahead(currentEpochTimestamp, lookaheadSetParams);
+        // }
 
         uint256 _nextBlockId = nextBlockId;
 
@@ -180,6 +180,8 @@ contract PreconfTaskManager is IPreconfTaskManager {
         } else {
             revert IPreconfTaskManager.PreconfirmationIsCorrect();
         }
+
+        emit ProvedIncorrectPreconfirmation(proposedBlock.proposer, header.blockId, msg.sender);
     }
 
     /**
