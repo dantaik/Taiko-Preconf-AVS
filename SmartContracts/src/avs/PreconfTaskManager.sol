@@ -143,7 +143,7 @@ contract PreconfTaskManager is IPreconfTaskManager {
         nextBlockId = _nextBlockId + 1;
 
         // Block the preconfer from withdrawing stake from Eigenlayer during the dispute window
-        preconfServiceManager.lockStakeUntil(msg.sender, block.timestamp + DISPUTE_PERIOD);
+        // preconfServiceManager.lockStakeUntil(msg.sender, block.timestamp + DISPUTE_PERIOD);
 
         // Forward the block to Taiko's L1 contract
         taikoL1.proposeBlock{value: msg.value}(blockParams, txList);
