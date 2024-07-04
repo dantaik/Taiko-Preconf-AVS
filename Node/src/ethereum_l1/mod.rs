@@ -8,11 +8,13 @@ use alloy::{
     sol,
     sol_types::SolValue,
 };
+use beacon_api_client::{Client, ProposerDuty, mainnet::MainnetClientTypes};
 use anyhow::Error;
 use std::str::FromStr;
 
 pub struct EthereumL1 {
     rpc_url: reqwest::Url,
+    beacon_rpc_url: reqwest::Url,
     wallet: EthereumWallet,
 }
 
@@ -44,14 +46,21 @@ sol! {
 }
 
 impl EthereumL1 {
-    pub fn new(rpc_url: &str, private_key: &str) -> Result<Self, Error> {
+    pub fn new(rpc_url: &str, beacon_rpc_url: &str, private_key: &str) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
 
         Ok(Self {
             rpc_url: rpc_url.parse()?,
+            beacon_rpc_url: beacon_rpc_url.parse()?,
             wallet,
         })
+    }
+
+    async fn get_lookeahead(&self, epoch: u64) -> Result<Vec<ProposerDuty>, Error> {
+        let client: Client<MainnetClientTypes> = Client::new(self.beacon_rpc_url.clone());
+        let (_, duties) = client.get_proposer_duties(epoch).await?;
+        Ok(duties)
     }
 
     pub async fn propose_new_block(
@@ -100,12 +109,13 @@ impl EthereumL1 {
     #[cfg(test)]
     fn new_from_pk(
         rpc_url: reqwest::Url,
+        beacon_rpc_url: reqwest::Url,
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer);
 
-        Ok(Self { rpc_url, wallet })
+        Ok(Self { rpc_url, beacon_rpc_url, wallet })
     }
 
     #[cfg(test)]
