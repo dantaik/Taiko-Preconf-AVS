@@ -2,6 +2,22 @@
 pragma solidity 0.8.25;
 
 interface ITaikoL1 {
+    struct HookCall {
+        address hook;
+        bytes data;
+    }
+
+    struct BlockParams {
+        address assignedProver; // DEPRECATED, value ignored.
+        address coinbase;
+        bytes32 extraData;
+        bytes32 parentMetaHash;
+        HookCall[] hookCalls; // DEPRECATED, value ignored.
+        bytes signature;
+        uint32 l1StateBlockNumber;
+        uint64 timestamp;
+    }
+
     struct BlockMetadata {
         bytes32 l1Hash;
         bytes32 difficulty;

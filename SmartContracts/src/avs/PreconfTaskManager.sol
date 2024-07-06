@@ -8,12 +8,17 @@ import {IPreconfServiceManager} from "../interfaces/IPreconfServiceManager.sol";
 import {IRegistryCoordinator} from "eigenlayer-middleware/interfaces/IRegistryCoordinator.sol";
 import {IIndexRegistry} from "eigenlayer-middleware/interfaces/IIndexRegistry.sol";
 import {ECDSA} from "openzeppelin-contracts/utils/cryptography/ECDSA.sol";
+import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
+import {Initializable} from "openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 
-contract PreconfTaskManager is IPreconfTaskManager {
+contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     IPreconfServiceManager internal immutable preconfServiceManager;
     IRegistryCoordinator internal immutable registryCoordinator;
     IIndexRegistry internal immutable indexRegistry;
     ITaikoL1 internal immutable taikoL1;
+
+    // Only for ethcc testnet
+    address internal immutable preconfer;
 
     // EIP-4788
     address internal immutable beaconBlockRootContract;
@@ -52,15 +57,20 @@ contract PreconfTaskManager is IPreconfTaskManager {
         IRegistryCoordinator _registryCoordinator,
         IIndexRegistry _indexRegistry,
         ITaikoL1 _taikoL1,
-        address _beaconBlockRootContract
+        address _beaconBlockRootContract,
+        address _preconfer
     ) {
         preconfServiceManager = _serviceManager;
         registryCoordinator = _registryCoordinator;
         indexRegistry = _indexRegistry;
         taikoL1 = _taikoL1;
         beaconBlockRootContract = _beaconBlockRootContract;
+        preconfer = _preconfer;
+    }
 
+    function initialize(IERC20 _taikoToken) external initializer {
         nextBlockId = 1;
+        _taikoToken.approve(address(taikoL1), type(uint256).max);
     }
 
     /**
