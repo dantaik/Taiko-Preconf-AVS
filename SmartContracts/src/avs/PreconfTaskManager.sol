@@ -140,6 +140,8 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         //     _updateLookahead(currentEpochTimestamp, lookaheadSetParams);
         // }
 
+        require(msg.sender == preconfer, "not the preconfer");
+
         uint256 _nextBlockId = nextBlockId;
 
         // Store the hash of the transaction list and the proposer of the proposed block.
