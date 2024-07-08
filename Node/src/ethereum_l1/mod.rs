@@ -63,6 +63,8 @@ impl EthereumL1 {
         tx_list: Vec<u8>,
         parent_meta_hash: [u8; 32],
     ) -> Result<(), Error> {
+        tracing::debug!("propose_new_block: tx_list len: {}, parent_meta_hash: {:?}", tx_list.len(), parent_meta_hash);
+
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(self.wallet.clone())

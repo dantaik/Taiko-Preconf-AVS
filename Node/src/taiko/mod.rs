@@ -53,7 +53,7 @@ impl Taiko {
         tx_lists: Value,
         gas_used: u64,
     ) -> Result<Value, Error> {
-        tracing::debug!("Submitting new L2 blocks");
+        tracing::debug!("advance_head_to_new_l2_block: Submitting new L2 blocks");
         let payload = serde_json::json!({
             "TxLists": tx_lists,
             "gasUsed": gas_used,
