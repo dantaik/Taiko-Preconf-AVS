@@ -1,4 +1,4 @@
-"""
+r"""
 This script is used to spam transactions on the Taiko network. It reads the private key and recipient address from a .env file,
 connects to the Taiko network, and sends a specified number of transactions to the recipient address.
 
@@ -27,6 +27,7 @@ import time
 from web3 import Web3
 import os
 from dotenv import load_dotenv
+import argparse
 
 # Load environment variables from .env file
 load_dotenv()
@@ -39,6 +40,11 @@ recipient = os.getenv('RECIPIENT_ADDRESS')
 if not recipient:
     raise Exception("Environment variable RECIPIENT_ADDRESS not set")
 
+parser = argparse.ArgumentParser(description='Spam transactions on the Taiko network.')
+parser.add_argument('--count', type=int, default=1, help='Number of transactions to send')
+parser.add_argument('--amount', type=float, default=0.006, help='Amount of ETH to send per transaction')
+args = parser.parse_args()
+
 # Connect to the Taiko network
 w3 = Web3(Web3.HTTPProvider('https://RPC.helder.taiko.xyz'))
 
@@ -48,29 +54,27 @@ if not w3.is_connected():
 
 # Get the account from the private key
 account = w3.eth.account.from_key(private_key)
+amount = w3.to_wei(args.amount, 'ether')
 
-# Define the amount to send (in Wei)
-amount = w3.to_wei(0.01, 'ether')
-
-# Function to send a transaction
-def send_transaction():
-    nonce = w3.eth.get_transaction_count(account.address)
+def send_transaction(nonce : int):
     tx = {
         'nonce': nonce,
         'to': recipient,
         'value': amount,
         'gas': 21000,
-        'gasPrice': w3.to_wei('10', 'gwei')
+        'gasPrice': w3.to_wei('10', 'gwei'),
+        'chainId': w3.eth.chain_id
     }
-    signed_tx = w3.eth.account.sign_transaction(tx)
+    print(f'Sending transaction: {tx}')
+    signed_tx = w3.eth.account.sign_transaction(tx, private_key)
     tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
     print(f'Transaction sent: {tx_hash.hex()}')
 
-# Function to spam transactions
 def spam_transactions(count):
+    nonce = w3.eth.get_transaction_count(account.address)
     for _ in range(count):
-        send_transaction()
-        time.sleep(1)  # Add a delay to avoid nonce issues
+        send_transaction(nonce)
+        nonce += 1
+        time.sleep(0.01)  # Add a delay to avoid nonce issues
 
-# Start spamming transactions
-spam_transactions(100)  # Replace 100 with the number of transactions you want to send
+spam_transactions(args.count)
