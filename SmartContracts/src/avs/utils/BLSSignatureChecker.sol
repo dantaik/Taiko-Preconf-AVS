@@ -19,7 +19,7 @@ contract BLSSignatureChecker {
      * @param pubkey The BLS public key of the expected signer
      */
     function verifySignature(bytes memory message, BLS12381.G2Point memory sig, BLS12381.G1Point memory pubkey)
-        internal
+        public
         view
         returns (bool)
     {
