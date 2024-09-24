@@ -26,6 +26,8 @@ struct Cli {
     add_validator: bool,
     #[clap(long, help = "Force Push lookahead to the PreconfTaskManager contract")]
     force_push_lookahead: bool,
+    #[clap(long, help = "Test mev boost")]
+    test_mev_boost: bool,
 }
 
 #[tokio::main]
@@ -81,6 +83,13 @@ async fn main() -> Result<(), Error> {
 
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url, config.validator_index);
     let ethereum_l1 = Arc::new(ethereum_l1);
+
+    if args.test_mev_boost {
+        let slot_id = ethereum_l1.slot_clock.get_current_slot()?;
+        let constraints = vec![];
+        mev_boost.force_inclusion(constraints, slot_id, bls_service.clone()).await?;
+        return Ok(());
+    }
 
     let node = node::Node::new(
         block_proposed_rx,
