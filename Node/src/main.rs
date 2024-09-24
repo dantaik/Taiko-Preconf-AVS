@@ -2,7 +2,7 @@ mod bls;
 mod ethereum_l1;
 mod mev_boost;
 mod node;
-mod p2p_network;
+//mod p2p_network;
 mod registration;
 mod taiko;
 mod utils;
@@ -13,7 +13,7 @@ use node::{
     block_proposed_receiver::BlockProposedEventReceiver,
     lookahead_updated_receiver::LookaheadUpdatedEventReceiver,
 };
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 use tokio::sync::mpsc;
 
 const MESSAGE_QUEUE_SIZE: usize = 100;
@@ -71,10 +71,10 @@ async fn main() -> Result<(), Error> {
     let (node_to_p2p_tx, node_to_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (p2p_to_node_tx, p2p_to_node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (block_proposed_tx, block_proposed_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
-    if config.enable_p2p {
+    /*if config.enable_p2p {
         let p2p = p2p_network::AVSp2p::new(p2p_to_node_tx.clone(), node_to_p2p_rx);
         p2p.start(config.p2p_network_config).await;
-    }
+    }*/
     let taiko = Arc::new(taiko::Taiko::new(
         &config.taiko_proposer_url,
         &config.taiko_driver_url,
@@ -85,8 +85,41 @@ async fn main() -> Result<(), Error> {
     let ethereum_l1 = Arc::new(ethereum_l1);
 
     if args.test_mev_boost {
-        let slot_id = ethereum_l1.slot_clock.get_current_slot()?;
-        let constraints = vec![];
+        let tx = ethereum_l1.execution_layer.get_send_eth_tx().await?;
+
+        let mut current_slot_id = ethereum_l1.slot_clock.get_current_slot()?;
+        let constraints = vec![tx];
+        tracing::debug!("current_slot_id = {}", current_slot_id);
+        tracing::debug!("constraints = {:?}", constraints);
+        // push on next slot where l1 proposer
+        let epoch = ethereum_l1.slot_clock.get_current_epoch()?;
+        let cl_lookahead = ethereum_l1.consensus_layer.get_lookahead(epoch).await?;
+
+        tracing::debug!(
+            "public_key = {}",
+            alloy::hex::encode(bls_service.get_public_key_compressed())
+        );
+        tracing::debug!("validator_index = {:?}", config.validator_index);
+
+        tracing::debug!("cl_lookahead = {:?}", cl_lookahead);
+
+        let slot_id = cl_lookahead
+            .iter()
+            .filter(|duty| {
+                duty.validator_index as u64 == config.validator_index && duty.slot > current_slot_id
+            })
+            .map(|duty| duty.slot)
+            .next()
+            .unwrap();
+        tracing::debug!("slot_id = {}", slot_id);
+        // wait 1 second
+        while slot_id != current_slot_id {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            current_slot_id = ethereum_l1.slot_clock.get_current_slot()?;
+            tracing::debug!("current_slot_id = {}", current_slot_id);
+        }
+
+        tracing::debug!("Run");
         mev_boost.force_inclusion(constraints, slot_id, bls_service.clone()).await?;
         return Ok(());
     }

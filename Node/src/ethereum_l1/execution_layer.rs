@@ -22,6 +22,7 @@ use alloy::{
     sol,
     sol_types::SolValue,
 };
+use alloy::{network::TransactionBuilder, rpc::types::TransactionRequest};
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
@@ -209,6 +210,38 @@ impl ExecutionLayer {
         })
     }
 
+    pub async fn get_send_eth_tx(&self) -> Result<Vec<u8>, Error> {
+        // TODO check gas parameters
+        let builder = TransactionRequest::default()
+            .with_to("0x6064f756f7F3dc8280C1CfA01cE41a37B5f16df1".parse()?)
+            .with_nonce(self.get_preconfer_nonce().await?)
+            .with_chain_id(self.l1_chain_id)
+            .with_value(U256::from(200))
+            .with_gas_limit(50_000)
+            .with_max_priority_fee_per_gas(1_000_000_000)
+            .with_max_fee_per_gas(20_000_000_000);
+
+        // Build transaction
+        let tx = builder.build_typed_tx();
+        let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
+            // TODO fix
+            panic!("Not EIP1559 transaction");
+        };
+
+        // Sign transaction
+        let signature = self
+            .wallet
+            .default_signer()
+            .sign_transaction(&mut tx)
+            .await?;
+
+        // Encode transaction
+        let mut buf = vec![];
+        tx.encode_with_signature(&signature, &mut buf, false);
+        tracing::debug!("Sending eth tx: {:?}", buf);
+        Ok(buf)
+    }
+
     pub async fn propose_new_block(
         &self,
         nonce: u64,
@@ -253,7 +286,7 @@ impl ExecutionLayer {
             )
             .chain_id(self.l1_chain_id)
             .nonce(nonce)
-            .gas(50_000)
+            .gas(500_000)
             .max_fee_per_gas(20_000_000_000)
             .max_priority_fee_per_gas(1_000_000_000);
 
