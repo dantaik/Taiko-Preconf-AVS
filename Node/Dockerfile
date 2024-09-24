@@ -1,7 +1,7 @@
 FROM rust:1.80 as builder
 
 # Set the working directory inside the container
-WORKDIR /usr/src/taiko-preconf-mev-boost
+WORKDIR /usr/src/node
 # Copy the entire project into the container
 COPY . .
 
@@ -12,7 +12,7 @@ RUN cargo build --release
 FROM ubuntu:latest
 
 # Copy the build artifact from the builder stage
-COPY --from=builder /usr/src/taiko-preconf-mev-boost/target/release/taiko-preconf-avs-node /usr/local/bin/test-mev-boost
+COPY --from=builder /usr/src/node/target/release/taiko_preconf_avs_node /usr/local/bin/testmevboost
 
 # Run the binary
 # CMD in docker-compose
