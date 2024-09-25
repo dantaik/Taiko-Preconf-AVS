@@ -33,6 +33,7 @@ mod tests {
                 .unwrap(),
         );
         // Create mev-boost
+        // TODO fix url
         let mev_boost = MevBoost::new(" http://localhost:8080/eth/v1/builder/constraints", 123);
         // Some random constraints
         let constraint1 = generate_random_vec_with_random_size(50, 200);
