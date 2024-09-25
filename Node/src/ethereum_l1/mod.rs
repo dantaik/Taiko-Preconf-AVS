@@ -71,6 +71,7 @@ impl EthereumL1 {
         let next_epoch = self.slot_clock.get_current_epoch()? + 1;
         // Get CL lookahead for the next epoch
         let cl_lookahead = self.consensus_layer.get_lookahead(next_epoch).await?;
+        tracing::debug!("cl_lookahead = {:?}", cl_lookahead);
         // Get lookahead params for contract call
         let lookahead_params = self
             .execution_layer
@@ -79,6 +80,11 @@ impl EthereumL1 {
                 &cl_lookahead,
             )
             .await?;
+        tracing::debug!("lookahead_set_params");
+        for lookahead_set_param in lookahead_params.clone() {
+            tracing::debug!("{:?}", lookahead_set_param.timestamp);
+        }
+        tracing::debug!("current_slot_id = {}", self.slot_clock.get_current_slot()?);
         // Force push lookahead to the contract
         self.execution_layer
             .force_push_lookahead(lookahead_params)
