@@ -213,10 +213,10 @@ impl ExecutionLayer {
     pub async fn get_send_eth_tx(&self) -> Result<Vec<u8>, Error> {
         // TODO check gas parameters
         let builder = TransactionRequest::default()
-            .with_to("0x6064f756f7F3dc8280C1CfA01cE41a37B5f16df1".parse()?)
+            .with_to("0xE25583099BA105D9ec0A67f5Ae86D90e50036425".parse()?)
             .with_nonce(self.get_preconfer_nonce().await?)
             .with_chain_id(self.l1_chain_id)
-            .with_value(U256::from(200))
+            .with_value(U256::from(2000000000))
             .with_gas_limit(50_000)
             .with_max_priority_fee_per_gas(1_000_000_000)
             .with_max_fee_per_gas(20_000_000_000);
@@ -239,6 +239,16 @@ impl ExecutionLayer {
         let mut buf = vec![];
         tx.encode_with_signature(&signature, &mut buf, false);
         tracing::debug!("Sending eth tx: {:?}", buf);
+
+        /*let pending = self
+                .provider_ws
+                .send_raw_transaction(&buf)
+                .await?
+                .register()
+                .await?;
+
+        tracing::debug!("Proposed new block, with hash {}", pending.tx_hash());*/
+
         Ok(buf)
     }
 

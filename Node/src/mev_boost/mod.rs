@@ -24,6 +24,7 @@ impl MevBoost {
 
     async fn post_constraints(&self, params: Value) -> Result<Value, Error> {
         let client = Client::new();
+        println!("url: {}" , self.url.clone()+"/eth/v1/builder/constraints");
         let response = client
             .post(self.url.clone()+"/eth/v1/builder/constraints")
             .json(&params)
@@ -32,6 +33,7 @@ impl MevBoost {
             .map_err(|e| anyhow::anyhow!("Failed to send message: {}", e))?;
 
         let json: Value = response.json().await.unwrap();
+        println!("json: {:#?}", json);
         Ok(json)
     }
 
