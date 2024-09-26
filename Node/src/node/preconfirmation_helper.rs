@@ -19,11 +19,13 @@ impl PreconfirmationHelper {
     pub fn get_next_nonce(&mut self) -> u64 {
         let nonce = self.nonce;
         self.nonce += 1;
+        tracing::debug!("Nonce fetched: {}", nonce);
         nonce
     }
 
     pub fn increment_nonce(&mut self) {
         self.nonce += 1;
+        tracing::debug!("Nonce incremented: {}", self.nonce);
     }
 
     pub fn increment_final_slot_perconfirmation(&mut self) {

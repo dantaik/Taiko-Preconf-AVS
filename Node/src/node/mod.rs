@@ -56,6 +56,7 @@ pub struct Node {
     operator: Operator,
     preconfirmation_helper: PreconfirmationHelper,
     bls_service: Arc<BLSService>,
+    nonce: u64,
 }
 
 impl Node {
@@ -88,6 +89,7 @@ impl Node {
             operator,
             preconfirmation_helper: PreconfirmationHelper::new(),
             bls_service,
+            nonce: 0,
         })
     }
 
@@ -297,6 +299,33 @@ impl Node {
     }
 
     async fn check_and_initialize_lookahead(&mut self) -> Result<(), Error> {
+        self.nonce = self
+            .ethereum_l1
+            .execution_layer
+            .get_preconfer_nonce()
+            .await?;
+        tracing::debug!("INIT nonce: {}", self.nonce);
+
+        // for _ in 0..15 {
+        //     let nonce = self
+        //         .ethereum_l1
+        //         .execution_layer
+        //         .get_preconfer_nonce()
+        //         .await?;
+        //     tracing::debug!("Got nonce: {}, self.nonce: {}", nonce, self.nonce);
+        //     if let Err(err) = self
+        //         .ethereum_l1
+        //         .execution_layer
+        //         .force_push_lookahead(vec![])
+        //         .await
+        //     {
+        //         tracing::error!("Failed to force push lookahead: {}", err);
+        //     } else {
+        //         self.nonce += 1;
+        //     }
+        //     sleep(Duration::from_secs(1)).await;
+        // }
+
         // Check that the lookahead tail is equal to zero
         let is_zero = self
             .ethereum_l1
@@ -305,6 +334,7 @@ impl Node {
             .await?;
         if is_zero {
             self.ethereum_l1.force_push_lookahead().await?;
+            self.nonce += 1;
         }
         Ok(())
     }
@@ -337,7 +367,11 @@ impl Node {
     }
 
     async fn new_epoch_started(&mut self, new_epoch: u64) -> Result<(), Error> {
-        tracing::info!("Current epoch changed from {} to {}", self.epoch, new_epoch);
+        tracing::info!(
+            " ====================> Current epoch changed from {} to {}",
+            self.epoch,
+            new_epoch
+        );
         self.epoch = new_epoch;
 
         self.operator = Operator::new(self.ethereum_l1.clone(), new_epoch)?;
@@ -406,6 +440,7 @@ impl Node {
     }
 
     async fn preconfirm_last_slot(&mut self) -> Result<(), Error> {
+        tracing::debug!("Preconfirming last slot");
         self.preconfirm_block(false).await?;
         if self
             .preconfirmation_helper
@@ -457,16 +492,35 @@ impl Node {
             self.ethereum_l1.slot_clock.get_current_slot()?
         );
 
+        let nonce = self
+            .ethereum_l1
+            .execution_layer
+            .get_preconfer_nonce()
+            .await?;
+        tracing::debug!(" preconfirm_block: Got nonce: {}", nonce);
+
         let lookahead_params = self.get_lookahead_params().await?;
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
-        let pending_tx_lists_bytes = if pending_tx_lists.tx_list_bytes.is_empty() {
+        let pending_tx_lists_bytes = if pending_tx_lists.tx_list_bytes.is_empty()
+        /*&& first sub slot*/
+        {
+            tracing::debug!("No pending transactions to preconfirm");
             if let Some(lookahead_params) = lookahead_params {
-                tracing::debug!("No pending transactions to preconfirm, force pushing lookahead");
-                self.preconfirmation_helper.increment_nonce();
-                self.ethereum_l1
+                match self
+                    .ethereum_l1
                     .execution_layer
                     .force_push_lookahead(lookahead_params)
-                    .await?;
+                    .await
+                {
+                    Ok(_) => {
+                        // self.preconfirmation_helper.increment_nonce();
+                        self.nonce += 1;
+                    }
+                    Err(e) => {
+                        // tracing::error!("Failed to force push lookahead: {}", e);
+                        return Err(e);
+                    }
+                }
             }
             return Ok(());
         } else {
@@ -503,7 +557,7 @@ impl Node {
             .ethereum_l1
             .execution_layer
             .propose_new_block(
-                self.preconfirmation_helper.get_next_nonce(),
+                self.nonce,
                 pending_tx_lists_bytes,
                 pending_tx_lists.parent_meta_hash,
                 lookahead_pointer,
@@ -511,6 +565,8 @@ impl Node {
                 send_to_contract,
             )
             .await?;
+
+        self.nonce += 1;
 
         // insert transaction
         self.preconfirmation_txs

@@ -22,6 +22,7 @@ use alloy::{
     sol,
     sol_types::SolValue,
 };
+use alloy::{network::TransactionBuilder, rpc::types::TransactionRequest};
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
@@ -218,9 +219,21 @@ impl ExecutionLayer {
         lookahead_set_params: Vec<IPreconfTaskManager::LookaheadSetParam>,
         send_to_contract: bool,
     ) -> Result<Vec<u8>, Error> {
+        tracing::debug!(
+            "Proposing new block with {} lookahead params and nonce {}",
+            lookahead_set_params.len(),
+            nonce
+        );
+
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
+        );
+
+        let on_chain_nonce = self.get_preconfer_nonce().await?;
+        tracing::debug!(
+            "on_chain_nonce Nonce fetched in the block proposal: {}",
+            on_chain_nonce
         );
 
         let block_params = BlockParams {
@@ -243,19 +256,56 @@ impl ExecutionLayer {
 
         let tx_list = Bytes::from(tx_list);
 
+        const GAS_LIMIT: u128 = 10_000_000;
+
+        const MAX_FEE_PER_GAS: u128 = 20_000_000_000;
+        const MAX_PRIORITY_FEE_PER_GAS: u128 = 1_000_000_000;
+
+        if send_to_contract {
+            match contract
+                .newBlockProposal(
+                    encoded_block_params.clone(),
+                    tx_list.clone(),
+                    U256::from(lookahead_pointer.clone()),
+                    lookahead_set_params.clone(),
+                )
+                .chain_id(self.l1_chain_id)
+                // .nonce(nonce)
+                .gas(GAS_LIMIT)
+                .max_fee_per_gas(MAX_FEE_PER_GAS)
+                .max_priority_fee_per_gas(MAX_PRIORITY_FEE_PER_GAS)
+                .from(self.preconfer_address)
+                .send()
+                .await
+            {
+                Err(err) => {
+                    tracing::error!(
+                        "ethcall: Failed to propose new block: {}",
+                        err.to_avs_contract_error()
+                    );
+                }
+                Ok(_) => {
+                    tracing::debug!("eth_call: Proposed new block, went fine");
+                }
+            }
+
+            return Ok(vec![]);
+        }
+
         // TODO check gas parameters
         let builder = contract
             .newBlockProposal(
                 encoded_block_params,
                 tx_list,
                 U256::from(lookahead_pointer),
-                lookahead_set_params,
+                vec![], // lookahead_set_params,
             )
             .chain_id(self.l1_chain_id)
             .nonce(nonce)
-            .gas(500_000)
-            .max_fee_per_gas(20_000_000_000)
-            .max_priority_fee_per_gas(1_000_000_000);
+            .gas(GAS_LIMIT)
+            .max_fee_per_gas(MAX_FEE_PER_GAS)
+            .max_priority_fee_per_gas(MAX_PRIORITY_FEE_PER_GAS)
+            .from(self.preconfer_address);
 
         // Build transaction
         let tx = builder.as_ref().clone().build_typed_tx();
@@ -277,17 +327,56 @@ impl ExecutionLayer {
 
         // Send transaction
         if send_to_contract {
-            let pending = self
-                .provider_ws
-                .send_raw_transaction(&buf)
-                .await?
-                .register()
-                .await?;
+            let pending = self.provider_ws.send_raw_transaction(&buf).await?;
 
             tracing::debug!("Proposed new block, with hash {}", pending.tx_hash());
         }
 
         Ok(buf)
+    }
+
+    pub async fn get_send_eth_tx(&self) -> Result<Vec<u8>, Error> {
+        let strategy_manager = StrategyManager::new(
+            self.contract_addresses.eigen_layer.strategy_manager,
+            &self.provider_ws,
+        );
+        let mut nonce = self.get_preconfer_nonce().await?;
+        let one_eth = U256::from(1000000000000000000u64);
+        match strategy_manager
+            .depositIntoStrategy(Address::ZERO, Address::ZERO, one_eth)
+            .value(one_eth)
+            .nonce(nonce)
+            .send()
+            .await
+        {
+            Ok(receipt) => {
+                let tx_hash = receipt.tx_hash();
+                tracing::info!("Deposited into strategy: {tx_hash}");
+            }
+            Err(err) => {
+                tracing::error!("Depositing into strategy failed: {}", err);
+            }
+        }
+        // TODO check gas parameters
+        nonce += 1;
+        let one_eth = U256::from(1000000000000000000u64);
+        match strategy_manager
+            .depositIntoStrategy(Address::ZERO, Address::ZERO, one_eth)
+            .value(one_eth)
+            .nonce(nonce)
+            .send()
+            .await
+        {
+            Ok(receipt) => {
+                let tx_hash = receipt.tx_hash();
+                tracing::info!("Deposited into strategy: {tx_hash}");
+            }
+            Err(err) => {
+                tracing::error!("Depositing into strategy failed: {}", err);
+            }
+        }
+        panic!("TODO: check gas parameters");
+        Ok(vec![])
     }
 
     pub async fn register_preconfer(&self) -> Result<(), Error> {
@@ -591,19 +680,14 @@ impl ExecutionLayer {
         &self,
         lookahead_set_params: Vec<IPreconfTaskManager::LookaheadSetParam>,
     ) -> Result<(), Error> {
-        tracing::debug!(
-            "Force pushing lookahead, {} params",
-            lookahead_set_params.len()
-        );
+        tracing::debug!("Force pushing empty lookahead");
 
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
         );
 
-        let tx = contract
-            .forcePushLookahead(lookahead_set_params)
-            .gas(1_000_000);
+        let tx = contract.forcePushLookahead(vec![]).gas(1_000_000);
         match tx.send().await {
             Ok(receipt) => {
                 tracing::debug!("Force push lookahead sent: {}", receipt.tx_hash());
@@ -898,11 +982,6 @@ impl ExecutionLayer {
     }
 
     pub async fn is_lookahead_required(&self, epoch_begin_timestamp: u64) -> Result<bool, Error> {
-        tracing::debug!(
-            "Checking if lookahead is required for epoch: {}",
-            self.slot_clock
-                .get_epoch_for_timestamp(epoch_begin_timestamp)?
-        );
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
@@ -913,7 +992,13 @@ impl ExecutionLayer {
             .call()
             .await?;
 
-        tracing::debug!("is_lookahead_required: {}", is_required._0);
+        tracing::debug!(
+            "is_lookahead_required for epoch {}: {}",
+            self.slot_clock
+                .get_epoch_for_timestamp(epoch_begin_timestamp)?,
+            is_required._0
+        );
+
         Ok(is_required._0)
     }
 
