@@ -710,7 +710,10 @@ impl ExecutionLayer {
             &self.provider_ws,
         );
 
-        let tx = contract.forcePushLookahead(vec![]).gas(1_000_000);
+        let tx = contract
+            .forcePushLookahead(vec![])
+            .nonce(self.get_preconfer_nonce().await?)
+            .gas(1_000_000);
         match tx.send().await {
             Ok(receipt) => {
                 tracing::debug!("Force push lookahead sent: {}", receipt.tx_hash());
