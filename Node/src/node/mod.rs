@@ -276,9 +276,6 @@ impl Node {
         let duration_to_next_slot = self.ethereum_l1.slot_clock.duration_to_next_slot().unwrap();
         sleep(duration_to_next_slot).await;
 
-
-        // self.ethereum_l1.execution_layer.call_few_txs().await.unwrap();
-
         // Setup protocol if needed
         if let Err(e) = self.check_and_initialize_lookahead().await {
             tracing::error!("Failed to initialize lookahead: {}", e);
@@ -433,10 +430,10 @@ impl Node {
     }
 
     async fn preconfirm_block(&mut self, send_to_contract: bool) -> Result<(), Error> {
-        // if self.ethereum_l1.slot_clock.get_l2_slot_number()? < 3 {
-        //     tracing::debug!("Skipping sub slot");
-        //     return Ok(());
-        // }
+        if self.ethereum_l1.slot_clock.get_l2_slot_number()? < 3 {
+            tracing::debug!("Skipping sub slot");
+            return Ok(());
+        }
 
         tracing::info!(
             "Preconfirming for the slot: {:?}",
