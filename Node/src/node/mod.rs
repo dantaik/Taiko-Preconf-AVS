@@ -420,9 +420,10 @@ impl Node {
                 // Get slot_id
                 let slot_id = self.ethereum_l1.slot_clock.get_current_slot()?;
 
-                self.mev_boost
-                    .force_inclusion(constraints, slot_id, self.bls_service.clone())
-                    .await?;
+                // TODO: commented for the image generation
+                // self.mev_boost
+                //     .force_inclusion(constraints, slot_id, self.bls_service.clone())
+                //     .await?;
 
                 preconfirmation_txs.clear();
             }
