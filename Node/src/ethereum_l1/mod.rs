@@ -35,6 +35,7 @@ impl EthereumL1 {
         consensus_rpc_url: &str,
         slot_duration_sec: u64,
         slots_per_epoch: u64,
+        l2_slot_duration_sec: u64,
         preconf_registry_expiry_sec: u64,
         bls_service: Arc<BLSService>,
         l1_chain_id: u64,
@@ -46,6 +47,7 @@ impl EthereumL1 {
             genesis_details.genesis_time,
             slot_duration_sec,
             slots_per_epoch,
+            l2_slot_duration_sec,
         ));
 
         let execution_layer = ExecutionLayer::new(

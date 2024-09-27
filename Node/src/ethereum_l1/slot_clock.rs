@@ -11,6 +11,7 @@ pub struct SlotClock {
     /// The length of each slot.
     slot_duration: Duration,
     slots_per_epoch: u64,
+    l2_slot_duration_sec: u64,
 }
 
 impl SlotClock {
@@ -19,6 +20,7 @@ impl SlotClock {
         genesis_timestamp_sec: u64,
         slot_duration_sec: u64,
         slots_per_epoch: u64,
+        l2_slot_duration_sec: u64,
     ) -> Self {
         tracing::info!(
             "SlotClock: genesis_timestamp_sec: {}, genesis_slot: {}",
@@ -30,6 +32,7 @@ impl SlotClock {
             genesis_duration: Duration::from_secs(genesis_timestamp_sec),
             slot_duration: Duration::from_secs(slot_duration_sec),
             slots_per_epoch,
+            l2_slot_duration_sec,
         }
     }
 
@@ -135,6 +138,17 @@ impl SlotClock {
         let cur_epoch = cur_slot / self.slots_per_epoch;
         let epoch_start_slot = cur_epoch * self.slots_per_epoch;
         Ok(cur_slot - epoch_start_slot)
+    }
+
+    // 0 based L2 slot number within the current L1 slot
+    pub fn get_l2_slot_number(&self) -> Result<u64, Error> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let slot_begin = self.start_of(self.get_current_slot()?)?;
+        Ok(self.which_l2_slot_is_it((now - slot_begin).as_secs()))
+    }
+
+    fn which_l2_slot_is_it(&self, secs_from_l1_slot_begin: u64) -> u64 {
+        secs_from_l1_slot_begin / self.l2_slot_duration_sec
     }
 }
 

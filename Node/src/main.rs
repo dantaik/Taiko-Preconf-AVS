@@ -48,6 +48,7 @@ async fn main() -> Result<(), Error> {
         &config.l1_beacon_url,
         config.l1_slot_duration_sec,
         config.l1_slots_per_epoch,
+        config.l2_slot_duration_sec,
         config.preconf_registry_expiry_sec,
         bls_service.clone(),
         config.l1_chain_id,

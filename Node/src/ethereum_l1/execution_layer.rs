@@ -211,7 +211,7 @@ impl ExecutionLayer {
 
     pub async fn propose_new_block(
         &self,
-        nonce: u64,
+        // nonce: u64,
         tx_list: Vec<u8>,
         parent_meta_hash: [u8; 32],
         lookahead_pointer: u64,
@@ -219,10 +219,12 @@ impl ExecutionLayer {
         send_to_contract: bool,
     ) -> Result<Vec<u8>, Error> {
         tracing::debug!(
-            "Proposing new block with {} lookahead params and nonce {}",
+            "Proposing new block with {} lookahead params",
             lookahead_set_params.len(),
-            nonce
+            // nonce
         );
+
+        let nonce = self.get_preconfer_nonce().await?;
 
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
@@ -254,36 +256,34 @@ impl ExecutionLayer {
         const MAX_FEE_PER_GAS: u128 = 20_000_000_000;
         const MAX_PRIORITY_FEE_PER_GAS: u128 = 1_000_000_000;
 
-        if send_to_contract {
-            match contract
-                .newBlockProposal(
-                    encoded_block_params.clone(),
-                    tx_list.clone(),
-                    U256::from(lookahead_pointer.clone()),
-                    lookahead_set_params.clone(),
-                )
-                .chain_id(self.l1_chain_id)
-                // .nonce(nonce)
-                .gas(GAS_LIMIT)
-                .max_fee_per_gas(MAX_FEE_PER_GAS)
-                .max_priority_fee_per_gas(MAX_PRIORITY_FEE_PER_GAS)
-                .from(self.preconfer_address)
-                .call()
-                .await
-            {
-                Err(err) => {
-                    tracing::error!(
-                        "ethcall: Failed to propose new block: {}",
-                        err.to_avs_contract_error()
-                    );
-                }
-                Ok(_) => {
-                    tracing::debug!("eth_call: Proposed new block, went fine");
-                }
-            }
-
-            return Ok(vec![]);
-        }
+        // if send_to_contract {
+        //     match contract
+        //         .newBlockProposal(
+        //             encoded_block_params.clone(),
+        //             tx_list.clone(),
+        //             U256::from(lookahead_pointer.clone()),
+        //             vec![], // lookahead_set_params.clone(),
+        //         )
+        //         .chain_id(self.l1_chain_id)
+        //         .nonce(nonce)
+        //         .gas(GAS_LIMIT)
+        //         .max_fee_per_gas(MAX_FEE_PER_GAS)
+        //         .max_priority_fee_per_gas(MAX_PRIORITY_FEE_PER_GAS)
+        //         .from(self.preconfer_address)
+        //         .call()
+        //         .await
+        //     {
+        //         Err(err) => {
+        //             tracing::error!(
+        //                 "ethcall: Failed to simulate propose new block: {}",
+        //                 err.to_avs_contract_error()
+        //             );
+        //         }
+        //         Ok(_) => {
+        //             tracing::debug!("eth_call: new block proposal simulation went fine");
+        //         }
+        //     }
+        // }
 
         // TODO check gas parameters
         let builder = contract
@@ -294,7 +294,7 @@ impl ExecutionLayer {
                 vec![], // lookahead_set_params,
             )
             .chain_id(self.l1_chain_id)
-            // .nonce(nonce)
+            .nonce(nonce)
             .gas(GAS_LIMIT)
             .max_fee_per_gas(MAX_FEE_PER_GAS)
             .max_priority_fee_per_gas(MAX_PRIORITY_FEE_PER_GAS)
@@ -326,6 +326,80 @@ impl ExecutionLayer {
         }
 
         Ok(buf)
+    }
+
+    pub async fn call_few_txs(&self) -> Result<(), Error> {
+        let strategy_manager = StrategyManager::new(
+            self.contract_addresses.eigen_layer.strategy_manager,
+            &self.provider_ws,
+        );
+
+        tracing::debug!("Calling few txs");
+        let mut nonce = self.get_preconfer_nonce().await?;
+
+        const GAS_LIMIT: u128 = 10_000_000;
+
+        const MAX_FEE_PER_GAS: u128 = 20_000_000_000;
+        const MAX_PRIORITY_FEE_PER_GAS: u128 = 1_000_000_000;
+        let one_eth = U256::from(1000000000000000000u64);
+
+        for _ in 0..4 {
+            tracing::debug!("Calling depositIntoStrategy nonce: {}", nonce);
+            let strategy_manager = StrategyManager::new(
+                self.contract_addresses.eigen_layer.strategy_manager,
+                &self.provider_ws,
+            );
+
+            let builder = strategy_manager
+                .depositIntoStrategy(Address::ZERO, Address::ZERO, one_eth)
+                .value(one_eth)
+                .chain_id(self.l1_chain_id)
+                .nonce(nonce)
+                .gas(GAS_LIMIT)
+                .max_fee_per_gas(MAX_FEE_PER_GAS)
+                .max_priority_fee_per_gas(MAX_PRIORITY_FEE_PER_GAS)
+                .from(self.preconfer_address);
+
+            // Build transaction
+            let tx = builder.as_ref().clone().build_typed_tx();
+            let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
+                // TODO fix
+                panic!("Not EIP1559 transaction");
+            };
+
+            // Sign transaction
+            let signature = self
+                .wallet
+                .default_signer()
+                .sign_transaction(&mut tx)
+                .await?;
+
+            // Encode transaction
+            let mut buf = vec![];
+            tx.encode_with_signature(&signature, &mut buf, false);
+
+            // Send transaction
+
+            let pending = self.provider_ws.send_raw_transaction(&buf).await?;
+
+            tracing::debug!("Tx created, with hash {}", pending.tx_hash());
+
+            // match pending
+
+            // {
+            //     Ok(receipt) => {
+            //         let tx_hash = receipt.tx_hash();
+            //         tracing::info!("Deposited into strategy: {tx_hash}");
+            //     }
+            //     Err(err) => {
+            //         tracing::error!("Depositing into strategy failed: {}", err);
+            //     }
+            // }
+
+            nonce += 1;
+        }
+
+        Ok(())
     }
 
     pub async fn register_preconfer(&self) -> Result<(), Error> {

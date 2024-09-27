@@ -2,7 +2,6 @@ pub mod block_proposed_receiver;
 mod commit;
 pub mod lookahead_updated_receiver;
 mod operator;
-mod preconfirmation_helper;
 mod preconfirmation_message;
 mod preconfirmation_proof;
 
@@ -19,7 +18,6 @@ use anyhow::{anyhow as any_err, Error};
 use beacon_api_client::ProposerDuty;
 use commit::L2TxListsCommit;
 use operator::{Operator, Status as OperatorStatus};
-use preconfirmation_helper::PreconfirmationHelper;
 use preconfirmation_message::PreconfirmationMessage;
 use preconfirmation_proof::PreconfirmationProof;
 use std::{
@@ -54,7 +52,6 @@ pub struct Node {
     is_preconfer_now: Arc<AtomicBool>,
     preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>, // block_id -> tx
     operator: Operator,
-    preconfirmation_helper: PreconfirmationHelper,
     bls_service: Arc<BLSService>,
 }
 
@@ -86,7 +83,6 @@ impl Node {
             is_preconfer_now: Arc::new(AtomicBool::new(false)),
             preconfirmation_txs: Arc::new(Mutex::new(HashMap::new())),
             operator,
-            preconfirmation_helper: PreconfirmationHelper::new(),
             bls_service,
         })
     }
@@ -280,6 +276,9 @@ impl Node {
         let duration_to_next_slot = self.ethereum_l1.slot_clock.duration_to_next_slot().unwrap();
         sleep(duration_to_next_slot).await;
 
+
+        // self.ethereum_l1.execution_layer.call_few_txs().await.unwrap();
+
         // Setup protocol if needed
         if let Err(e) = self.check_and_initialize_lookahead().await {
             tracing::error!("Failed to initialize lookahead: {}", e);
@@ -324,7 +323,6 @@ impl Node {
             OperatorStatus::Preconfer => {
                 if !self.is_preconfer_now.load(Ordering::Acquire) {
                     self.is_preconfer_now.store(true, Ordering::Release);
-                    self.start_propose().await?;
                 }
                 self.preconfirm_block(true).await?;
             }
@@ -406,11 +404,9 @@ impl Node {
     }
 
     async fn preconfirm_last_slot(&mut self) -> Result<(), Error> {
+        tracing::debug!("Preconfirming last slot");
         self.preconfirm_block(false).await?;
-        if self
-            .preconfirmation_helper
-            .is_last_final_slot_perconfirmation()
-        {
+        if self.ethereum_l1.slot_clock.get_l2_slot_number()? >= 3 {
             // Last(4th) perconfirmation when we are proposer and preconfer
             self.is_preconfer_now.store(false, Ordering::Release);
 
@@ -430,28 +426,17 @@ impl Node {
 
                 preconfirmation_txs.clear();
             }
-        } else {
-            // Increment perconfirmations count when we are proposer and preconfer
-            self.preconfirmation_helper
-                .increment_final_slot_perconfirmation();
         }
 
         Ok(())
     }
 
-    async fn start_propose(&mut self) -> Result<(), Error> {
-        // get L1 preconfer wallet nonce
-        let nonce = self
-            .ethereum_l1
-            .execution_layer
-            .get_preconfer_nonce()
-            .await?;
-
-        self.preconfirmation_helper.init(nonce);
-        Ok(())
-    }
-
     async fn preconfirm_block(&mut self, send_to_contract: bool) -> Result<(), Error> {
+        // if self.ethereum_l1.slot_clock.get_l2_slot_number()? < 3 {
+        //     tracing::debug!("Skipping sub slot");
+        //     return Ok(());
+        // }
+
         tracing::info!(
             "Preconfirming for the slot: {:?}",
             self.ethereum_l1.slot_clock.get_current_slot()?
@@ -462,7 +447,6 @@ impl Node {
         let pending_tx_lists_bytes = if pending_tx_lists.tx_list_bytes.is_empty() {
             if let Some(lookahead_params) = lookahead_params {
                 tracing::debug!("No pending transactions to preconfirm, force pushing lookahead");
-                self.preconfirmation_helper.increment_nonce();
                 self.ethereum_l1
                     .execution_layer
                     .force_push_lookahead(lookahead_params)
@@ -503,7 +487,6 @@ impl Node {
             .ethereum_l1
             .execution_layer
             .propose_new_block(
-                self.preconfirmation_helper.get_next_nonce(),
                 pending_tx_lists_bytes,
                 pending_tx_lists.parent_meta_hash,
                 lookahead_pointer,
