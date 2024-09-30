@@ -154,8 +154,9 @@ impl Node {
                 Some(p2p_message) = p2p_to_node_rx.recv() => {
                     if !is_preconfer_now.load(Ordering::Acquire) {
                         let msg: PreconfirmationMessage = p2p_message.into();
+                        tracing::debug!("Node received message from p2p");
                         tracing::debug!("Node received message from p2p: {:?}", msg);
-                        Self::check_preconfirmation_message(msg, &preconfirmed_blocks, ethereum_l1.clone(), taiko.clone()).await;
+                        // Self::check_preconfirmation_message(msg, &preconfirmed_blocks, ethereum_l1.clone(), taiko.clone()).await;
                     } else {
                         tracing::debug!("Node is Preconfer and received message from p2p: {:?}", p2p_message);
                     }
@@ -551,6 +552,7 @@ impl Node {
         &self,
         message: PreconfirmationMessage,
     ) -> Result<(), Error> {
+        tracing::debug!("Sending preconfirmation message to p2p: {:?}", message);
         self.node_to_p2p_tx
             .send(message.into())
             .await
